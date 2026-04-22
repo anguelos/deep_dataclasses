@@ -1,59 +1,5 @@
-"""deep_dataclass — recursive nested-class to @dataclass transformer.
-
-Converts a plain class hierarchy defined with inner classes into proper
-@dataclass instances.  This module  is a standalone Python utility.
-
-Declaration order is preserved throughout.  Inner classes become fields with
-``default_factory``; annotated attributes become regular fields; annotations
-without a default value become mandatory fields (no default).
-
-Example::
-
-    @deep_dataclass
-    class Config:
-        class Solver:
-            class Adam:
-                lr: float = 1e-3
-                beta1: float = 0.9
-            class SGD:
-                lr: float = 0.1
-                momentum: float = 0.9
-        device: str = "cpu"
-        seed: int = 42
-
-    # Config is a @dataclass with fields:
-    #   Solver: <Solver dataclass>  (default_factory=Solver)
-    #   device: str = "cpu"
-    #   seed:   int = 42
-    #
-    # Config.Solver is a @dataclass with fields:
-    #   Adam: <Adam dataclass>  (default_factory=Adam)
-    #   SGD:  <SGD dataclass>   (default_factory=SGD)
-"""
 import dataclasses
 import typing
-
-
-class DictCoercible:
-    """Mixin that coerces dict arguments into nested dataclass instances.
-
-    Applied automatically by :func:`deep_dataclass` to every generated class.
-    When a field typed as a dataclass receives a plain ``dict`` value,
-    ``__post_init__`` converts it via ``FieldType(**the_dict)``, which in turn
-    triggers the same coercion one level deeper.
-
-    Existing dataclass instances pass through unchanged.
-    """
-
-    def __post_init__(self):
-        hints = typing.get_type_hints(type(self))
-        for f in dataclasses.fields(self):
-            val = getattr(self, f.name)
-            typ = hints.get(f.name)
-            if (isinstance(val, dict)
-                    and dataclasses.is_dataclass(typ)
-                    and not isinstance(val, typ)):
-                object.__setattr__(self, f.name, typ(**val))
 
 
 def deep_dataclass(cls=None, *, exclude_from_recursion=()):
@@ -144,6 +90,3 @@ def deep_dataclass(cls=None, *, exclude_from_recursion=()):
         return result
 
     return _decorate(cls) if cls is not None else _decorate
-
-
-__all__ = ["deep_dataclass"]

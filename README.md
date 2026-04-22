@@ -1,5 +1,6 @@
 ```python
-import dataclass, deep_dataclass
+from deep_dataclasses import deep_dataclass
+from dataclasses import dataclass
 
 
 @dataclass
@@ -7,17 +8,15 @@ class GrandChild:
     grandchild_str: str = "grandchild1"
     grandchild_num: int = 1
 
-
 @dataclass
 class Child:
-    child_str: str = "child"
-    grandchild: Grandchild
-
+    grandchild: GrandChild = field(default_factory=GrandChild)
+    child_str:  str = "child"
 
 @dataclass
 class Parent:
-    parent_str: str = "parent"
-    child: Child
+    child: Child = field(default_factory=Child)
+    parent_str: str   = "parent"
 
 
 @deep_dataclass
@@ -28,4 +27,10 @@ class DeepParent:
         class GrandChild:
             grandchild_str: str = "grandchild1"
             grandchild_num: int = 1
+
+
+d1 = Parent()
+d2 = DeepParent()
+print(str(d1))
+print(str(d2))
 ```
