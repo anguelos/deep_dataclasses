@@ -105,3 +105,6 @@ Python 3.13's [PEP 712](https://peps.python.org/pep-0712/) added `field(converte
 ## Status
 
 Early release. Core functionality is complete and covered at 100%. API may evolve — feedback welcome on [discuss.python.org](https://discuss.python.org).
+
+## Contributing
+Issues and PRs welcome. See the [issue tracker](https://github.com/anguelos/deep_dataclasses/issues) for known TODOs.
