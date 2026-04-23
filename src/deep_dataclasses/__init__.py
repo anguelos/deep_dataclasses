@@ -33,6 +33,6 @@ Example::
 
 from .deep_dataclass import deep_dataclass
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = ["deep_dataclass", "__version__"]

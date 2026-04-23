@@ -71,7 +71,7 @@ def _coerce_dicts(self):
             object.__setattr__(self, f.name, _coerce_dict_to(typ, val))
 
 
-def deep_dataclass(cls=None, *, autosnake=False, **dataclass_kwargs):
+def deep_dataclass(cls=None, *, coerce_dicts: bool = True, autosnake: bool = False, **dataclass_kwargs):
     """Recursively convert a nested class definition into a @dataclass.
 
     Walks the class in declaration order, transforms inline inner classes
@@ -106,13 +106,9 @@ def deep_dataclass(cls=None, *, autosnake=False, **dataclass_kwargs):
                        or when ``init=False`` is passed.
     """
     def _apply(cls):
-        if dataclass_kwargs.get("init") is False:
-            raise TypeError("deep_dataclass requires init=True; dict coercion runs in __init__.")
-        if "__post_init__" in vars(cls):
-            raise TypeError(
-                f"{cls.__name__} defines __post_init__; "
-                f"deep_dataclass reserves it for dict coercion."
-            )
+        if dataclass_kwargs.get("init") is False and coerce_dicts:
+            raise TypeError("deep_dataclass requires init=True; when coerce_dicts is True.")
+        user_post_init = vars(cls).get("__post_init__") if coerce_dicts else None
 
         old_annotations = dict(vars(cls).get("__annotations__", {}))
         inner_dcs = {}        # field_name -> dataclass
@@ -151,19 +147,25 @@ def deep_dataclass(cls=None, *, autosnake=False, **dataclass_kwargs):
         mandatory = {k: v for k, v in old_annotations.items() if k not in seen}
         cls.__annotations__ = {**mandatory, **ordered}
 
-        if dataclasses.is_dataclass(cls):
-            # cls is already a @dataclass (e.g. @deep_dataclass @dataclass).
-            # Re-calling @dataclass would lose field() specs: factory fields are
-            # consumed from cls.__dict__ by the first decoration and are invisible
-            # to a second @dataclass call.  Wrap __init__ directly instead.
-            _orig = cls.__init__
-            def __init__(self, *args, **kwargs):
-                _orig(self, *args, **kwargs)
-                _coerce_dicts(self)
-            cls.__init__ = __init__
-        else:
-            cls.__post_init__ = _coerce_dicts
+        if not dataclasses.is_dataclass(cls):
+            if coerce_dicts:
+                if user_post_init:
+                    def __post_init__(self):
+                        _coerce_dicts(self)
+                        user_post_init(self)
+                    cls.__post_init__ = __post_init__
+                else:
+                    cls.__post_init__ = _coerce_dicts
+            # else: no injection, user's __post_init__ (if any) stays
             cls = dataclasses.dataclass(cls, **dataclass_kwargs)
+        else:
+            # already a @dataclass — wrap __init__ instead
+            _orig = cls.__init__
+            if coerce_dicts:
+                def __init__(self, *args, **kwargs):
+                    _orig(self, *args, **kwargs)
+                    _coerce_dicts(self)
+            cls.__init__ = __init__
 
         for field_name, inner_dc in inner_dcs.items():
             setattr(cls, field_name, inner_dc)

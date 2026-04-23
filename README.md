@@ -3,6 +3,7 @@
 ![Coverage](https://img.shields.io/badge/coverage-100%25-success)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+![Pypi](https://img.shields.io/pypi/v/deep_dataclasses)
 
 > Define nested dataclass hierarchies as clean, readable schemas — no boilerplate.
 

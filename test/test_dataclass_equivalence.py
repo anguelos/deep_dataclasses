@@ -30,6 +30,52 @@ class DeepParent:
     parent_str: str = "parent"
 
 
+def test_multiple_children():
+    # Test that multiple children are correctly transformed and that their fields are accessible.
+    @deep_dataclass
+    class Parent1:
+        class child1:
+            class grandchild1:
+                grandchild_str: str = "ch1_grandchild1"
+                grandchild_num: int = 1
+            class grandchild2:
+                grandchild_str: str = "ch1_grandchild2"
+                grandchild_num: int = 2
+            child1_str: str = "child1"
+        class child2:
+            class grandchild1:
+                grandchild_str: str = "ch2_grandchild1"
+                grandchild_num: int = 1
+            class grandchild2:
+                grandchild_str: str = "ch2_grandchild2"
+                grandchild_num: int = 2
+            child2_str: str = "child2"
+        parent_str: str = "parent"
+    
+    assert Parent1().child1.grandchild1.grandchild_str == "ch1_grandchild1"
+    assert Parent1().child1.grandchild2.grandchild_str == "ch1_grandchild2"
+    assert Parent1().child1.child1_str == "child1"
+    assert Parent1().child2.grandchild1.grandchild_str == "ch2_grandchild1"
+    assert Parent1().child2.grandchild2.grandchild_str == "ch2_grandchild2"
+    assert Parent1().child2.child2_str == "child2"
+    assert Parent1().parent_str == "parent"
+    assert asdict(Parent1()) == {
+        "child1": {
+            "grandchild1": {"grandchild_str": "ch1_grandchild1", "grandchild_num": 1},
+            "grandchild2": {"grandchild_str": "ch1_grandchild2", "grandchild_num": 2},
+            "child1_str": "child1"
+        },
+        "child2": {
+            "grandchild1": {"grandchild_str": "ch2_grandchild1", "grandchild_num": 1},
+            "grandchild2": {"grandchild_str": "ch2_grandchild2", "grandchild_num": 2},
+            "child2_str": "child2"
+        },
+        "parent_str": "parent"
+    }
+    assert Parent1(**asdict(Parent1())) == Parent1()
+
+
+
 def test_nested_unnested_dataclass_equivalence():
     assert asdict(Parent()) == asdict(DeepParent())
 
@@ -147,19 +193,17 @@ def test_redecoration():
         parent_str: str   = "parent"
     assert asdict(Parent2()) == asdict(Parent1()) == asdict(DeepParent())
 
-
-
-    with pytest.raises(TypeError):
-        # Reapplying deep_dataclass to an already decorated class should raise a TypeError because of multiple __post_init__ definitions.   
-        @deep_dataclass
-        @deep_dataclass
-        class Parent3:
-            class child:
-                class grandchild:
-                    grandchild_str: str = "grandchild1"
-                    grandchild_num: int = 1
-                child_str:  str = "child"
-            parent_str: str   = "parent"
+    @deep_dataclass
+    @deep_dataclass
+    class Parent3:
+        class child:
+            class grandchild:
+                grandchild_str: str = "grandchild1"
+                grandchild_num: int = 1
+            child_str:  str = "child"
+        parent_str: str   = "parent"
+    assert asdict(Parent3()) == asdict(Parent1()) == asdict(DeepParent())
+    assert Parent3(**asdict(Parent3())) == Parent3()
 
 
 def test_methods_and_properties_preserved():
@@ -237,6 +281,5 @@ def test_autosnake():
     assert Parent1.child_solver.lr == 1e-3
     assert Parent1.child_solver.momentum == 0.9
 
-    #eval(repr(Parent1()))
     #assert eval(repr(Parent1())) == Parent1()
     assert Parent1(**asdict(Parent1())) == Parent1()
