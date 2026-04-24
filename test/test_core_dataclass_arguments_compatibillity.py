@@ -1,3 +1,4 @@
+from __future__ import annotations
 import pytest
 import dataclasses
 from dataclasses import dataclass, field, asdict

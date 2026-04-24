@@ -1,3 +1,4 @@
+from __future__ import annotations
 import pytest
 from typing import Optional
 from dataclass_wizard import fromdict, asdict

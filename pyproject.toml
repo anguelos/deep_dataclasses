@@ -29,7 +29,7 @@ attr = "deep_dataclasses.__version__"
 
 [project.optional-dependencies]
 dev = ["pytest", "black", "flake8", "mypy"]
-test = ["pytest", "dacite", "dataclass-wizard", "pydantic"]
+test = ["pytest", "dacite", "dataclass-wizard", "pydantic", "jsonschema"]
 
 [project.urls]
 Homepage = "https://github.com/anguelos/deep_dataclasses"
