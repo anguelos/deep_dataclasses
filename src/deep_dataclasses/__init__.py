@@ -34,6 +34,6 @@ Example::
 from .deep_dataclass import deep_dataclass, auxiliary
 from .json_schema import to_json_schema
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 __all__ = ["deep_dataclass", "auxiliary", "to_json_schema", "__version__"]

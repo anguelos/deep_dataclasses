@@ -3,6 +3,15 @@ import dataclasses
 import typing
 
 
+# part of addressing PEP 649 -- in Python 3.10+ we can just use get_annotations with eval_str=True, 
+# but for 3.8/3.9 we need to resolve the annotations ourselves at coercion time.
+try:
+    from inspect import get_annotations as _get_cls_annotations
+except ImportError:
+    def _get_cls_annotations(cls):  # Python 3.8 / 3.9
+        return vars(cls).get('__annotations__', {})
+
+
 def auxiliary(cls):
     """Mark a class as auxiliary, i.e. to be used as a nested dataclass but not promoted to a field on the parent. Usefull for defining lists of classes etc."""
     cls.__deep_dataclass_auxiliary__ = True
@@ -79,7 +88,7 @@ def _coerce_tuple(elem_types, val):
 
 def _coerce_dict_to(typ: type, d: dict) -> object:
     """Recursively coerce a dict into *typ*, descending into nested dataclass fields."""
-    hints = typing.get_type_hints(typ)
+    hints = typing.get_type_hints(typ, localns=vars(typ))
     kwargs = {}
     for k, v in d.items():
         ft = hints.get(k)
@@ -118,7 +127,8 @@ def _coerce_dict_to(typ: type, d: dict) -> object:
 
 def _coerce_dicts(self):
     """Coerce dict-valued fields into their declared dataclass types (recursive)."""
-    hints = typing.get_type_hints(type(self))
+    cls = type(self)
+    hints = typing.get_type_hints(cls, localns=vars(cls))  
     for f in dataclasses.fields(self):
         val = getattr(self, f.name)
         typ = hints.get(f.name)
@@ -295,7 +305,7 @@ def deep_dataclass(cls=None, *, coerce_dicts: bool = True, autosnake: bool = Fal
             raise TypeError("deep_dataclass requires init=True; when coerce_dicts is True.")
         user_post_init = vars(cls).get("__post_init__") if coerce_dicts else None
 
-        old_annotations = dict(vars(cls).get("__annotations__", {}))
+        old_annotations = dict(_get_cls_annotations(cls))
 
         inner_dcs = {}        # field_name -> dataclass
         pascal_to_field = {}  # PascalCase attr_name -> field_name
