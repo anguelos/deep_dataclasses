@@ -29,10 +29,10 @@ jobs:
           pip install coverage
 
       - name: Run tests
-        run: |
-          coverage run --branch -m pytest test/ -q
-          coverage report --include="src/dataclasses/*" -m
-          coverage json --include="src/dataclasses/*"
+        run: |                                                                                                                                                      
+          coverage run --branch --source=deep_dataclasses -m pytest test/ -q
+          coverage report -m
+          coverage json
 
       - name: Update coverage badge
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
