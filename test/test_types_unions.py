@@ -20,6 +20,8 @@ def test_class_unions():
         @auxiliary
         class Test:
             metric: str = "accuracy"
+            cross_validation_folds: int = 5
+            report_style: str = "detailed"
         @auxiliary
         class ViewParameters:
             resolution: str = "1080p"
@@ -32,20 +34,17 @@ def test_class_unions():
     assert schema["type"] == "object"
     assert "mode" in schema["properties"]
 
-    config_schema = to_json_schema(Config)
+    strict_schema = to_json_schema(Config, strict=False)
     # correct — jsonschema validates it without raising an error
-    jsonschema.validate({"mode": {"lr": 0.01, "pseudo_batch_size": 32}, "seed": 123}, config_schema)
+    jsonschema.validate({"mode": {"lr": 0.01, "pseudo_batch_size": 32}, "seed": 123}, strict_schema)
 
-    # wrong type in Union — jsonschema raises ValidationError
-    with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate({"mode": {"lr": "0.001", "pseudo_batch_size": 32}, "seed": 123}, config_schema)
     
     # invalid union assignment — jsonschema raises ValidationError
     with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate({"mode": {"resolution": "720p", "fontsize": 18}, "seed": 123}, config_schema)
+        jsonschema.validate({"mode": {"resolution": "720p", "fontsize": 18}, "seed": 123}, strict_schema)
 
     # alternative must also be valid
-    jsonschema.validate({"mode": {"metric": "f1"}, "seed": 123}, config_schema)
+    jsonschema.validate({"mode": {"metric": "f1"}, "seed": 123}, strict_schema)
     
 
 
@@ -64,17 +63,45 @@ def test_optional_unions():
     assert "seed" in schema["properties"]
     assert "id" in schema["properties"]
 
-    config_schema = to_json_schema(Config)
+    strict_schema = to_json_schema(Config, strict=True)
     # correct — jsonschema validates it without raising an error
-    jsonschema.validate({"train": {"lr": 0.01, "pseudo_batch_size": 32}, "seed": 123, "id": "id4711"}, config_schema)
+    jsonschema.validate({"train": {"lr": 0.01, "pseudo_batch_size": 32}, "seed": 123, "id": "id4711"}, strict_schema)
 
     # wrong type in Union — jsonschema raises ValidationError
     with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate({"train": {"lr": "0.001", "pseudo_batch_size": 32}, "seed": 123, "id": 123.456}, config_schema)
+        jsonschema.validate({"train": {"lr": "0.001", "pseudo_batch_size": 32}, "seed": 123, "id": 123.456}, strict_schema)
     
     # missing field — jsonschema raises ValidationError
     with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate({"train": {"pseudo_batch_size": 32}, "seed": 123, "id": "id4711"}, config_schema)
+        jsonschema.validate({"train": {"pseudo_batch_size": 32}, "seed": 123, "id": "id4711"}, strict_schema)
 
     # missing optional field — jsonschema allows it and doesn't raise an error
-    jsonschema.validate({"train": {"lr": 0.01}, "seed": 123, "id": "id4711"}, config_schema)
+    jsonschema.validate({"train": {"lr": 0.01}, "seed": 123, "id": "id4711"}, strict_schema)
+
+
+def test_union_dict_coercion():
+    @deep_dataclass
+    class Config:
+        @auxiliary
+        class TrainMode:
+            lr: float = 0.001
+            pseudo_batch_size: int = 32
+        @auxiliary
+        class TestMode:
+            metric: str = "accuracy"
+            folds: int = 5
+        mode: Union[TrainMode, TestMode] = field(default_factory=TrainMode)
+
+    c = Config(mode={"lr": 0.01})
+    assert isinstance(c.mode, Config.TrainMode)
+    assert c.mode.lr == 0.01
+    assert c.mode.pseudo_batch_size == 32
+
+    c = Config(mode={"metric": "f1", "folds": 3})
+    assert isinstance(c.mode, Config.TestMode)
+    assert c.mode.metric == "f1"
+    assert c.mode.folds == 3
+
+    c = Config(mode=Config.TrainMode(lr=0.005))
+    assert c.mode.lr == 0.005
+

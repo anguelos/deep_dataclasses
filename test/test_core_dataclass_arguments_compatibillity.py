@@ -44,3 +44,17 @@ def test_unsafe_hash():
     class C:
         x: int = 0
     assert hash(C(x=1)) == hash(C(x=1))
+
+def test_custom_post_init():
+    @deep_dataclass
+    class Config:
+        class Inner:
+            x: int = 0
+        counter: int = 0
+
+        def __post_init__(self):
+            self.counter += 1
+
+    c = Config(Inner={"x": 5})
+    assert c.Inner.x == 5
+    assert c.counter == 1

@@ -1,12 +1,10 @@
-from __future__ import annotations
 import pytest
-from dataclasses import dataclass, field, asdict
+from dataclasses import field, asdict
 from deep_dataclasses import deep_dataclass, auxiliary
+from typing import Optional, List
 
-from typing import List
 
-
-def test_list_of_dataclasses():
+def test_optional_none_default():
     @deep_dataclass
     class Config:
         @auxiliary
@@ -14,22 +12,103 @@ def test_list_of_dataclasses():
             name: str = ""
             enabled: bool = True
 
-        plugins: List[Plugin] = field(default_factory=list)
+        plugin: Optional[Plugin] = None
 
-    # All of these work:
-    Config()                                    # plugins=[]
-    Config(plugins=[{"name": "foo"}])           # → [Plugin(name="foo", enabled=True)]
-    Config(plugins=[Config.Plugin(name="bar")])        # already correct type, passed through
-    assert Config(plugins=[{"name": "foo"}]).plugins[0].enabled == True
-    assert Config(plugins=[{"name": "foo"}]).plugins[0].name == "foo"
-    assert Config(plugins=[{"name": "foo", "enabled": False}]).plugins[0].enabled == False
-    assert Config(plugins=[{"name": "foo", "enabled": False}]).plugins[0].name == "foo"
-    assert Config(plugins=[{"name": "foo", "enabled": False}, {"name": "bar"}]).plugins[0].enabled == False
-    assert Config(plugins=[{"name": "foo", "enabled": False}, {"name": "bar"}]).plugins[0].name == "foo"
-    assert Config(plugins=[{"name": "foo", "enabled": False}, {"name": "bar"}]).plugins[1].enabled == True
-    assert Config(plugins=[{"name": "foo", "enabled": False}, {"name": "bar"}]).plugins[1].name == "bar"
-    assert Config(**asdict(Config())) == Config()  # round-trips through dict
-    
-    # The Plugin class is not a field, so it doesn't appear in the dict representation of Config, but plugins does.
-    assert "plugins" in asdict(Config())
-    assert "Plugin" not in asdict(Config())
+    assert Config().plugin is None
+    assert Config(plugin=None).plugin is None
+
+
+def test_optional_dict_coercion():
+    @deep_dataclass
+    class Config:
+        @auxiliary
+        class Plugin:
+            name: str = ""
+            enabled: bool = True
+
+        plugin: Optional[Plugin] = None
+
+    c = Config(plugin={"name": "foo"})
+    assert isinstance(c.plugin, Config.Plugin)
+    assert c.plugin.name == "foo"
+    assert c.plugin.enabled == True
+
+    c = Config(plugin={"name": "bar", "enabled": False})
+    assert c.plugin.name == "bar"
+    assert c.plugin.enabled == False
+
+
+def test_optional_instance_passthrough():
+    @deep_dataclass
+    class Config:
+        @auxiliary
+        class Plugin:
+            name: str = ""
+            enabled: bool = True
+
+        plugin: Optional[Plugin] = None
+
+    p = Config.Plugin(name="baz", enabled=False)
+    assert Config(plugin=p).plugin is p
+
+
+def test_optional_roundtrip():
+    @deep_dataclass
+    class Config:
+        @auxiliary
+        class Plugin:
+            name: str = ""
+            enabled: bool = True
+
+        plugin: Optional[Plugin] = None
+
+    assert Config(**asdict(Config())) == Config()
+    assert Config(**asdict(Config(plugin={"name": "x"}))) == Config(plugin=Config.Plugin(name="x"))
+
+
+def test_optional_inner_class_as_field():
+    @deep_dataclass
+    class Config:
+        class solver:
+            lr: float = 1e-3
+            momentum: float = 0.9
+
+        extra: Optional[str] = None
+
+    assert Config().extra is None
+    assert Config(extra="hello").extra == "hello"
+    assert Config(**asdict(Config())) == Config()
+    assert Config(**asdict(Config(extra="hello"))) == Config(extra="hello")
+
+
+def test_optional_nested_deep_dataclass():
+    @deep_dataclass
+    class Config:
+        @auxiliary
+        class Metrics:
+            accuracy: float = 0.0
+            loss: float = 0.0
+
+        class solver:
+            lr: float = 1e-3
+
+        metrics: Optional[Metrics] = None
+
+    assert Config().metrics is None
+    c = Config(metrics={"accuracy": 0.95, "loss": 0.05})
+    assert isinstance(c.metrics, Config.Metrics)
+    assert c.metrics.accuracy == 0.95
+    assert Config(**asdict(Config())) == Config()
+    assert Config(**asdict(Config(metrics={"accuracy": 0.9}))) == Config(metrics=Config.Metrics(accuracy=0.9))
+
+
+def test_optional_primitive_fields():
+    @deep_dataclass
+    class Config:
+        name: Optional[str] = None
+        count: Optional[int] = None
+        ratio: Optional[float] = None
+
+    assert Config().name is None
+    assert Config(name="x", count=3, ratio=0.5) == Config(name="x", count=3, ratio=0.5)
+    assert Config(**asdict(Config(name="y"))) == Config(name="y")
