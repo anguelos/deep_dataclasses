@@ -29,7 +29,7 @@ jobs:
           pip install coverage
 
       - name: Run tests
-        run: |                                                                                                                                                      
+        run: |
           coverage run --branch --source=deep_dataclasses -m pytest test/ -q
           coverage report -m
           coverage json
@@ -51,11 +51,10 @@ jobs:
             git checkout --orphan badges
             git rm -rf . 2>/dev/null || true
           fi
-          mkdir -p badges
-          echo "$JSON" > badges/coverage.json
+          echo "$JSON" > coverage.json
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add badges/coverage.json
+          git add coverage.json
           git diff --cached --quiet || git commit -m "chore: update coverage badge [$TOTAL%]"
           git push origin badges
         env:
