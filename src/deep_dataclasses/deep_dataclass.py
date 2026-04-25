@@ -153,6 +153,143 @@ def _coerce_dicts(self):
 
 
 def deep_dataclass(cls=None, *, coerce_dicts: bool = True, autosnake: bool = False, **dataclass_kwargs):
+    """Class decorator that promotes inner class definitions to ``@dataclass`` fields.
+
+    Each un-annotated inner class whose ``__qualname__`` matches
+    ``OuterClass.InnerName`` is recursively processed with
+    ``@deep_dataclass`` and promoted to a field whose ``default_factory``
+    constructs a default instance.  The result is a fully valid
+    ``@dataclass`` compatible with ``dataclasses.asdict``,
+    ``dataclasses.fields``, ``repr``, ``==``, and all standard dataclass
+    tooling.
+
+    Can be used with or without arguments:
+
+    .. code-block:: python
+
+        @deep_dataclass
+        @deep_dataclass()
+        @deep_dataclass(autosnake=True, frozen=True)
+
+    Parameters
+    ----------
+    cls : type, optional
+        The class being decorated.  Supplied automatically by Python when
+        the decorator is used without parentheses; ``None`` when called
+        with keyword arguments.
+    coerce_dicts : bool, default True
+        When ``True``, injects a ``__post_init__`` hook that recursively
+        coerces any ``dict`` argument into its declared dataclass type.
+        Coercion descends through:
+
+        - ``SomeDataclass`` — direct coercion.
+        - ``Optional[T]`` — coerces the inner type when the value is a dict.
+        - ``Union[A, B, ...]`` — selects the dataclass variant whose field
+          names cover all keys in the dict, preferring the variant with the
+          fewest unfilled fields (exact match wins).
+        - ``Dict[K, T]`` — coerces each dict value to ``T``.
+        - ``List[T]`` — coerces each list element to ``T``.
+        - ``Tuple[T, ...]`` — coerces tuple elements to their declared types.
+
+        A user-defined ``__post_init__`` is preserved and called *after*
+        coercion.  Incompatible with ``init=False``.
+    autosnake : bool, default False
+        When ``True``, PascalCase inner class names are converted to
+        snake_case field names (e.g. ``class AdamSolver`` becomes field
+        ``adam_solver``).  The original PascalCase name is retained as a
+        class attribute so that ``eval(repr(obj))`` round-trips correctly.
+    **dataclass_kwargs
+        Forwarded verbatim to ``dataclasses.dataclass()``
+        (e.g. ``frozen=True``, ``order=True``, ``eq=False``).
+
+    Returns
+    -------
+    type
+        The decorated class as a ``@dataclass`` with all inner classes
+        promoted to fields.  If the class was already a ``@dataclass``
+        when decorated, its ``__init__`` is wrapped to add coercion rather
+        than re-applying ``@dataclass``.
+
+    Raises
+    ------
+    TypeError
+        If ``init=False`` is passed together with ``coerce_dicts=True``.
+
+    Notes
+    -----
+    * Inner classes decorated with :func:`auxiliary` are processed and
+      kept as class attributes but are **not** promoted to standalone fields.
+      Use this for shared type definitions — for example, an element type
+      for a ``List[Plugin]`` field — that should not appear on their own.
+    * Annotated names (``name: type`` or ``name: type = default``) are
+      never treated as inner classes, even when they hold a type value.
+    * Fields without defaults (mandatory annotations) are placed before
+      fields with defaults, satisfying the restriction imposed by
+      ``@dataclass``.
+    * ``from __future__ import annotations`` (PEP 563) is fully compatible;
+      inner-class type hints are resolved via ``vars(cls)`` at coercion time.
+
+    Examples
+    --------
+    Basic nested configuration:
+
+    >>> @deep_dataclass
+    ... class Config:
+    ...     class Optimizer:
+    ...         lr: float = 1e-3
+    ...         momentum: float = 0.9
+    ...     class Scheduler:
+    ...         step_size: int = 10
+    ...         gamma: float = 0.1
+    ...     epochs: int = 100
+    >>> Config().Optimizer.lr
+    0.001
+    >>> Config().epochs
+    100
+
+    Passing dicts instead of instances (coerce_dicts):
+
+    >>> cfg = Config(Optimizer={"lr": 0.01})
+    >>> cfg.Optimizer.lr
+    0.01
+    >>> isinstance(cfg.Optimizer, Config.Optimizer)
+    True
+
+    Round-trip through ``asdict``:
+
+    >>> from dataclasses import asdict
+    >>> Config(**asdict(cfg)) == cfg
+    True
+
+    ``autosnake`` converts PascalCase inner class names to snake_case fields:
+
+    >>> @deep_dataclass(autosnake=True)
+    ... class Model:
+    ...     class TransformerEncoder:
+    ...         num_layers: int = 6
+    >>> Model().transformer_encoder.num_layers
+    6
+    >>> Model().TransformerEncoder.num_layers   # PascalCase alias preserved
+    6
+
+    ``@auxiliary`` marks an inner class as a type helper without creating
+    a field for it:
+
+    >>> from typing import List
+    >>> from dataclasses import field
+    >>> @deep_dataclass
+    ... class Pipeline:
+    ...     @auxiliary
+    ...     class Stage:
+    ...         name: str = ""
+    ...         enabled: bool = True
+    ...     stages: List[Stage] = field(default_factory=list)
+    >>> p = Pipeline(stages=[{"name": "preprocess"}, {"name": "train"}])
+    >>> p.stages[0].name
+    'preprocess'
+    >>> "Stage" in {f.name for f in dataclasses.fields(Pipeline)}
+    False
+    """
     def _apply(cls):
         if dataclass_kwargs.get("init") is False and coerce_dicts:
             raise TypeError("deep_dataclass requires init=True; when coerce_dicts is True.")

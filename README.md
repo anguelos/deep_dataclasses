@@ -1,9 +1,11 @@
 # deep_dataclasses
 
-![Coverage](https://img.shields.io/badge/coverage-100%25-success)
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+
+![Tests](https://img.shields.io/github/actions/workflow/status/anguelos/deep_dataclasses/tests.yml?label=tests)
+![Python](https://img.shields.io/pypi/pyversions/deep_dataclasses)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Pypi](https://img.shields.io/pypi/v/deep_dataclasses)
+![Size](https://img.shields.io/github/repo-size/anguelos/deep_dataclasses)
 
 > Define nested dataclass hierarchies as clean, readable schemas — no boilerplate.
 
@@ -14,23 +16,29 @@
 Python's `@dataclass` requires you to define each level of a nested hierarchy separately, then wire them together manually with `field(default_factory=...)`:
 
 ```python
+from dataclasses import dataclass, asdict, field
 @dataclass
-class GrandChild:
-    grandchild_str: str = "grandchild1"
-    grandchild_num: int = 1
+class NestedParent:
+    @dataclass
+    class Child:
+        @dataclass
+        class GrandChild:
+            grandchild_str: str = "grandchild1"
+            grandchild_num: int = 1
 
-@dataclass
-class Child:
-    grandchild: GrandChild = field(default_factory=GrandChild)
-    child_str: str = "child"
+        grandchild: GrandChild = field(default_factory=GrandChild)
+        child_str: str = "child"
 
-@dataclass
-class Parent:
     child: Child = field(default_factory=Child)
     parent_str: str = "parent"
 ```
+This is verbose, hard to read at a glance and the nested classnames have to be repeated three-fold
 
-This is verbose, hard to read at a glance, and the nesting structure is only implicit.
+But even worse:
+```python
+NestedParent(**asdict(NestedParent())) == NestedParent()  #  False
+```
+Is False which is not the behavior of flat dataclasses.
 
 ---
 
@@ -62,20 +70,41 @@ The decorator recursively converts nested `class` blocks into proper `@dataclass
 `@deep_dataclass` produces standard dataclass instances — all stdlib tools work as expected:
 
 ```python
-from dataclasses import asdict
-
-d1 = Parent()   # vanilla dataclass hierarchy
+d1 = NestedParent()   # vanilla dataclass hierarchy
 d2 = DeepParent()  # deep_dataclass equivalent
 
 # Structural equality across different class definitions
 asdict(d1) == asdict(d2)          # True
 
-# Round-trip via dict
-Parent(**asdict(d1)) == d1        # True
+# But DeepParent coerses dicts correctly.
 DeepParent(**asdict(d2)) == d2    # True
 ```
-
 ---
+
+## Third party validation via jsonschema
+
+While deep_dataclasses dont validate they provide to_json_schema in order to allow third party validation before instantiation in one line.
+While to_json_schema runs equally well on all dataclasses, only flat @dataclass and @deep_dataclass make sense, nested dataclasse dont coerse dicts so there is not much use to it.
+
+```python
+from deep_dataclasses import to_json_schema
+import jsonschema
+
+data = asdict(DeepParent())
+jsonschema.validate(data, to_json_schema(DeepParent))  #  Passes
+
+data['child']['child_str']=3
+jsonschema.validate(data, to_json_schema(DeepParent))  #  Raises
+```
+
+```
+Failed validating 'type' in schema['properties']['child']['properties']['child_str']:
+    {'type': 'string', 'default': 'child'}
+
+On instance['child']['child_str']:
+    3
+```
+
 
 ## Installation
 
@@ -93,19 +122,13 @@ pip install deep-dataclasses
 | `field(default_factory=...)` | Required per field | Automatic |
 | `asdict()` / `==` / `__repr__` | ✅ | ✅ |
 | `frozen`, `slots`, etc. | ✅ | ✅ (tested) |
-| Type validation | ❌ | ❌ (by design) |
-
----
-
-## Relationship to PEP 712
-
-Python 3.13's [PEP 712](https://peps.python.org/pep-0712/) added `field(converter=...)` for per-field coercion. `@deep_dataclass` complements this by handling the structural boilerplate one level up — the class hierarchy itself.
+| Type validation | ❌ | Exports to jsonschema |
 
 ---
 
 ## Status
 
-Early release. Core functionality is complete and covered at 100%. API may evolve — feedback welcome on [discuss.python.org](https://discuss.python.org).
+Early release. Core functionality is complete and test covered at 100%. API may evolve — feedback welcome on [discuss.python.org](https://discuss.python.org).
 
 ## Contributing
 Issues and PRs welcome. See the [issue tracker](https://github.com/anguelos/deep_dataclasses/issues) for known TODOs.
