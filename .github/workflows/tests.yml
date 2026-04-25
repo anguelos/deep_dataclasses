@@ -8,19 +8,31 @@ on: [push, pull_request]
 
 jobs:
   test:
+    name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    continue-on-error: ${{ matrix.experimental == true }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        experimental: [false]
+        include:
+          - python-version: "3.14-dev"
+            experimental: true
 
     steps:
       - uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5.3.0
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
 
       - name: Install package and test dependencies
         run: |
@@ -35,7 +47,7 @@ jobs:
           coverage json
 
       - name: Update coverage badge
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && matrix.python-version == '3.12'
         run: |
           TOTAL=$(python -c "import json; d=json.load(open('coverage.json')); print(round(d['totals']['percent_covered']))")
           if   [ "$TOTAL" -ge 90 ]; then COLOR=brightgreen
