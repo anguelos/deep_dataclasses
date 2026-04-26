@@ -13,7 +13,76 @@ except ImportError:
 
 
 def auxiliary(cls):
-    """Mark a class as auxiliary, i.e. to be used as a nested dataclass but not promoted to a field on the parent. Usefull for defining lists of classes etc."""
+    """Mark a class as a type-only helper inside a ``@deep_dataclass``.
+
+    Decorated inner classes are converted to proper ``@dataclass`` types
+    and remain accessible as class attributes, but are **not** promoted to
+    standalone fields on the enclosing class.  Use this when an inner class
+    is needed purely as a type (e.g. as the element type of a ``List[T]``,
+    one arm of a ``Union[A, B]``, or the value type of a ``Dict[K, V]``)
+    and should not appear as a default-constructed field in its own right.
+
+    Parameters
+    ----------
+    cls : type
+        The inner class to mark as auxiliary.  Must be a plain class; it
+        will be processed by ``@deep_dataclass`` and converted to a
+        ``@dataclass`` automatically.
+
+    Returns
+    -------
+    type
+        The same class, with the ``__deep_dataclass_auxiliary__`` attribute
+        set to ``True``.
+
+    Notes
+    -----
+    * ``@auxiliary`` must be applied *before* the enclosing class is
+      decorated with ``@deep_dataclass``, i.e. as an inner decorator inside
+      the class body.
+    * The processed class is still accessible on the enclosing class under
+      its original name, so it can be used in type annotations and passed
+      to ``isinstance``.
+
+    Examples
+    --------
+    Using ``@auxiliary`` as an element type for a list field:
+
+    >>> from dataclasses import field
+    >>> from typing import List
+    >>> from deep_dataclasses import deep_dataclass, auxiliary
+    >>>
+    >>> @deep_dataclass
+    ... class Pipeline:
+    ...     @auxiliary
+    ...     class Stage:
+    ...         name: str = ""
+    ...         enabled: bool = True
+    ...     stages: List[Stage] = field(default_factory=list)
+    >>>
+    >>> p = Pipeline(stages=[{"name": "preprocess"}, {"name": "train"}])
+    >>> p.stages[0].name
+    'preprocess'
+    >>> "Stage" in {f.name for f in dataclasses.fields(Pipeline)}
+    False
+
+    Using ``@auxiliary`` as a ``Union`` variant:
+
+    >>> from typing import Union
+    >>>
+    >>> @deep_dataclass
+    ... class Config:
+    ...     @auxiliary
+    ...     class TrainMode:
+    ...         lr: float = 1e-3
+    ...     @auxiliary
+    ...     class TestMode:
+    ...         metric: str = "accuracy"
+    ...     mode: Union[TrainMode, TestMode] = field(default_factory=TrainMode)
+    >>>
+    >>> isinstance(Config(mode={"lr": 0.01}).mode, Config.TrainMode)
+    True
+    """
     cls.__deep_dataclass_auxiliary__ = True
     return cls
 
