@@ -1,4 +1,5 @@
 from __future__ import annotations
+import sys
 from typing import Optional, Union
 enable_future_annotations = True
 
@@ -188,6 +189,7 @@ def test_unions():
     jsonschema.validate({"train": {"lr": 0.01}, "seed": 123, "id": "id4711"}, strict_schema)
 
 
+@pytest.mark.skipif(sys.version_info < (3, 10), reason="PEP 604 | syntax requires Python 3.10+")
 def test_pep604unions():
     @deep_dataclass
     class Config:
