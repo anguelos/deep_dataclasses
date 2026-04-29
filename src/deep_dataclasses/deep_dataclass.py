@@ -2,14 +2,20 @@ import re
 import dataclasses
 import typing
 
-
-# part of addressing PEP 649 -- in Python 3.10+ we can just use get_annotations with eval_str=True, 
-# but for 3.8/3.9 we need to resolve the annotations ourselves at coercion time.
+# PEP 604: X | Y produces types.UnionType (Python 3.10+), not typing.Union
 try:
-    from inspect import get_annotations as _get_cls_annotations
+    from types import UnionType as _UnionType
 except ImportError:
-    def _get_cls_annotations(cls):  # Python 3.8 / 3.9
+    _UnionType = None  # Python < 3.10
+
+# PEP 649: inspect.get_annotations available from Python 3.10+
+try:
+    from inspect import get_annotations as _get_annotations
+except ImportError:
+    def _get_annotations(cls):
         return vars(cls).get('__annotations__', {})
+
+TypeForm = typing.Any  # type | GenericAlias | UnionType | None (no stdlib type covers all)
 
 
 def auxiliary(cls):
@@ -88,147 +94,85 @@ def auxiliary(cls):
 
 
 def _to_snake(name: str) -> str:
-    """Convert PascalCase / CamelCase to snake_case."""
+    # PascalCase -> snake_case
     s = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name)
     s = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', s)
     return s.lower()
 
 
-def _get_list_element_type(typ):
-    if typing.get_origin(typ) is list:
-        args = typing.get_args(typ)
-        return args[0] if args else None
-    return None
+def _is_union(typ: TypeForm) -> bool:
+    # handles both typing.Union[X, Y] and X | Y (PEP 604)
+    return (typing.get_origin(typ) is typing.Union or
+            (_UnionType is not None and isinstance(typ, _UnionType)))
 
 
-def _get_tuple_element_types(typ):
-    if typing.get_origin(typ) is tuple:
-        args = typing.get_args(typ)
-        return args if args else None
-    return None
-
-
-def _get_dict_value_type(typ):
-    if typing.get_origin(typ) is dict:
-        args = typing.get_args(typ)
-        return args[1] if len(args) >= 2 else None
-    return None
-
-
-def _unwrap_optional(typ):
-    """Return the inner type of Optional[T] / Union[T, None], or None."""
-    if typing.get_origin(typ) is typing.Union:
-        args = [a for a in typing.get_args(typ) if a is not type(None)]
-        if len(args) == 1:
-            return args[0]
-    return None
-
-
-def _resolve_union_dataclass(typ, val: dict):
-    """Return the first Union member that is a dataclass whose fields cover all keys in val, or None."""
-    if typing.get_origin(typ) is not typing.Union:
-        return None
-    
-    # If it's a Union, find the dataclass type among the options that best matches the keys in val.
-    # Covering more keys is better, but we also want to prefer fewer unmatched required fields, 
-    # so we take the one with the best coverage ratio and then break ties by fewest unfilled fields.
+def _best_union_match(candidates: list, val: dict):
+    # return the dataclass from candidates whose fields best cover the keys in val
     best, best_unfilled = None, float('inf')
-    for arg in typing.get_args(typ):
-        if dataclasses.is_dataclass(arg):
-            valid = {f.name for f in dataclasses.fields(arg)}
+    for candidate in candidates:
+        if dataclasses.is_dataclass(candidate):
+            valid = {f.name for f in dataclasses.fields(candidate)}
             if all(k in valid for k in val):
                 unfilled = len(valid) - len(val)
                 if unfilled < best_unfilled:
-                    best, best_unfilled = arg, unfilled
+                    best, best_unfilled = candidate, unfilled
     return best
 
 
-def _coerce_tuple(elem_types, val):
-    if len(elem_types) == 2 and elem_types[1] is Ellipsis:
-        et = elem_types[0]
-        if dataclasses.is_dataclass(et):
-            return tuple(_coerce_dict_to(et, item) if isinstance(item, dict) else item for item in val)
-        return tuple(val)
-    return tuple(
-        _coerce_dict_to(et, item) if dataclasses.is_dataclass(et) and isinstance(item, dict) else item
-        for et, item in zip(elem_types, val)
-    )
+def _coerce_value(typ: TypeForm, val: typing.Any) -> typing.Any:
+    if val is None or typ is None:
+        return val
+
+    origin = typing.get_origin(typ)
+    args = typing.get_args(typ)
+
+    # plain dataclass
+    if dataclasses.is_dataclass(typ):
+        return _coerce_dict_to(typ, val) if isinstance(val, dict) else val
+
+    # Union / Optional[X] / X | Y | None  — all the same branch
+    if _is_union(typ):
+        non_none = [a for a in args if a is not type(None)]
+        if len(non_none) == 1:                          # Optional[X]
+            return _coerce_value(non_none[0], val)
+        if isinstance(val, dict):                       # Union[A, B, ...]
+            best = _best_union_match(non_none, val)
+            if best is not None:
+                return _coerce_dict_to(best, val)
+        return val
+
+    if origin is list and args and isinstance(val, (list, tuple)):
+        return [_coerce_value(args[0], item) for item in val]
+
+    if origin is tuple and args and isinstance(val, (list, tuple)):
+        if len(args) == 2 and args[1] is Ellipsis:     # Tuple[X, ...]
+            return tuple(_coerce_value(args[0], item) for item in val)
+        return tuple(_coerce_value(et, item) for et, item in zip(args, val))
+
+    if origin is dict and len(args) >= 2 and isinstance(val, dict):
+        return {k: _coerce_value(args[1], v) for k, v in val.items()}
+
+    if origin in (set, frozenset) and args and isinstance(val, (list, set, frozenset)):
+        return origin(_coerce_value(args[0], item) for item in val)
+
+    return val
 
 
 def _coerce_dict_to(typ: type, d: dict) -> object:
-    """Recursively coerce a dict into *typ*, descending into nested dataclass fields."""
+    # coerce a flat dict into an instance of typ, recursing into each field
     hints = typing.get_type_hints(typ, localns=vars(typ))
-    kwargs = {}
-    for k, v in d.items():
-        ft = hints.get(k)
-        if isinstance(v, dict) and ft and dataclasses.is_dataclass(ft):
-            kwargs[k] = _coerce_dict_to(ft, v)
-        elif isinstance(v, dict) and ft is not None:
-            inner = _unwrap_optional(ft)
-            if inner is not None and dataclasses.is_dataclass(inner):
-                kwargs[k] = _coerce_dict_to(inner, v)
-            else:
-                union_dc = _resolve_union_dataclass(ft, v)
-                if union_dc is not None:
-                    kwargs[k] = _coerce_dict_to(union_dc, v)
-                else:
-                    dict_vt = _get_dict_value_type(ft)
-                    if dict_vt is not None and dataclasses.is_dataclass(dict_vt):
-                        kwargs[k] = {kk: _coerce_dict_to(dict_vt, vv) if isinstance(vv, dict) else vv for kk, vv in v.items()}
-                    else:
-                        kwargs[k] = v
-        elif isinstance(v, (list, tuple)) and ft is not None:
-            elem_type = _get_list_element_type(ft)
-            elem_types = _get_tuple_element_types(ft)
-            if elem_type is not None and dataclasses.is_dataclass(elem_type):
-                kwargs[k] = [
-                    _coerce_dict_to(elem_type, item) if isinstance(item, dict) else item
-                    for item in v
-                ]
-            elif elem_types is not None:
-                kwargs[k] = _coerce_tuple(elem_types, v)
-            else:
-                kwargs[k] = v
-        else:
-            kwargs[k] = v
-    return typ(**kwargs)
+    return typ(**{k: _coerce_value(hints.get(k), v) for k, v in d.items()})
 
 
-def _coerce_dicts(self):
-    """Coerce dict-valued fields into their declared dataclass types (recursive)."""
-    cls = type(self)
-    hints = typing.get_type_hints(cls, localns=vars(cls))  
-    for f in dataclasses.fields(self):
-        val = getattr(self, f.name)
-        typ = hints.get(f.name)
-
-        if isinstance(val, dict) and dataclasses.is_dataclass(typ):
-            object.__setattr__(self, f.name, _coerce_dict_to(typ, val))
-        elif isinstance(val, dict) and typ is not None:
-            inner = _unwrap_optional(typ)
-            if inner is not None and dataclasses.is_dataclass(inner):
-                object.__setattr__(self, f.name, _coerce_dict_to(inner, val))
-            else:
-                union_dc = _resolve_union_dataclass(typ, val)
-                if union_dc is not None:
-                    object.__setattr__(self, f.name, _coerce_dict_to(union_dc, val))
-                else:
-                    dict_vt = _get_dict_value_type(typ)
-                    if dict_vt is not None and dataclasses.is_dataclass(dict_vt):
-                        object.__setattr__(self, f.name, {kk: _coerce_dict_to(dict_vt, vv) if isinstance(vv, dict) else vv for kk, vv in val.items()})
-                    else:
-                        object.__setattr__(self, f.name, val)
-
-        elif isinstance(val, (list, tuple)) and typ is not None:
-            elem_type = _get_list_element_type(typ)
-            elem_types = _get_tuple_element_types(typ)
-            if elem_type is not None and dataclasses.is_dataclass(elem_type):
-                object.__setattr__(self, f.name, [
-                    _coerce_dict_to(elem_type, item) if isinstance(item, dict) else item
-                    for item in val
-                ])
-            elif elem_types is not None:
-                object.__setattr__(self, f.name, _coerce_tuple(elem_types, val))
+def _coerce_fields(instance) -> None:
+    # post-init hook: coerce every dict/list/tuple field to its declared type
+    cls = type(instance)
+    hints = typing.get_type_hints(cls, localns=vars(cls))
+    for f in dataclasses.fields(instance):
+        val = getattr(instance, f.name)
+        coerced = _coerce_value(hints.get(f.name), val)
+        if coerced is not val:
+            object.__setattr__(instance, f.name, coerced)
 
 
 def deep_dataclass(cls=None, *, coerce_dicts: bool = True, autosnake: bool = False, **dataclass_kwargs):
@@ -370,42 +314,41 @@ def deep_dataclass(cls=None, *, coerce_dicts: bool = True, autosnake: bool = Fal
     False
     """
     def _apply(cls):
-        if dataclass_kwargs.get("init") is False and coerce_dicts:
-            raise TypeError("deep_dataclass requires init=True; when coerce_dicts is True.")
-        user_post_init = vars(cls).get("__post_init__") if coerce_dicts else None
+        if dataclass_kwargs.get('init') is False and coerce_dicts:
+            raise TypeError("coerce_dicts requires init=True")
 
-        old_annotations = dict(_get_cls_annotations(cls))
-
-        inner_dcs = {}        # field_name -> dataclass
-        pascal_to_field = {}  # PascalCase attr_name -> field_name
+        user_post_init = vars(cls).get('__post_init__') if coerce_dicts else None
+        old_annotations = dict(_get_annotations(cls))
+        inner_dcs = {}       # field_name -> dataclass
+        pascal_to_field = {} # PascalCase attr -> field_name (only differs when autosnake=True)
 
         for attr_name in list(vars(cls)):
-            if attr_name.startswith("_"):
+            if attr_name.startswith('_'):
                 continue
             attr_val = vars(cls)[attr_name]
-            if (isinstance(attr_val, type)
-                    and attr_val.__qualname__ == f"{cls.__qualname__}.{attr_name}"
-                    and attr_name not in old_annotations):
-                inner_dc = deep_dataclass(attr_val, autosnake=autosnake)
+            is_inner_class = (isinstance(attr_val, type)
+                              and attr_val.__qualname__ == f'{cls.__qualname__}.{attr_name}'
+                              and attr_name not in old_annotations)
+            if not is_inner_class:
+                continue
 
-                if getattr(inner_dc, "__deep_dataclass_auxiliary__", False):
-                    # Type-only helper — no standalone field
-                    setattr(cls, attr_name, inner_dc)
-                else:
-                    field_name = _to_snake(attr_name) if autosnake else attr_name
-                    inner_dcs[field_name] = inner_dc
-                    pascal_to_field[attr_name] = field_name
-                    setattr(cls, field_name, dataclasses.field(default_factory=inner_dc))
+            inner_dc = deep_dataclass(attr_val, autosnake=autosnake)
 
-        # Rebuild __annotations__ in class-body order (vars() order for items
-        # present there; mandatory annotation-only fields prepended so that
-        # @dataclass sees no-default fields before defaulted ones).
+            if getattr(inner_dc, '__deep_dataclass_auxiliary__', False):
+                setattr(cls, attr_name, inner_dc)  # type-only helper, no field
+            else:
+                field_name = _to_snake(attr_name) if autosnake else attr_name
+                inner_dcs[field_name] = inner_dc
+                pascal_to_field[attr_name] = field_name
+                setattr(cls, field_name, dataclasses.field(default_factory=inner_dc))
+
+        # rebuild __annotations__ preserving declaration order;
+        # mandatory (no-default) fields first so @dataclass doesn't complain
         ordered, seen = {}, set()
         for key in vars(cls):
-            if key.startswith("_"):
+            if key.startswith('_'):
                 if key in old_annotations:
-                    ordered[key] = old_annotations[key]
-                    seen.add(key)
+                    ordered[key] = old_annotations[key]; seen.add(key)
                 continue
             if key in pascal_to_field:
                 fn = pascal_to_field[key]
@@ -421,35 +364,29 @@ def deep_dataclass(cls=None, *, coerce_dicts: bool = True, autosnake: bool = Fal
             if coerce_dicts:
                 if user_post_init:
                     def __post_init__(self):
-                        _coerce_dicts(self)
+                        _coerce_fields(self)
                         user_post_init(self)
                     cls.__post_init__ = __post_init__
                 else:
-                    cls.__post_init__ = _coerce_dicts
-            # else: no injection, user's __post_init__ (if any) stays
+                    cls.__post_init__ = _coerce_fields
             cls = dataclasses.dataclass(cls, **dataclass_kwargs)
         else:
-            # already a @dataclass — wrap __init__ instead
+            # already a @dataclass — wrap __init__
             _orig = cls.__init__
-            if coerce_dicts:
-                def __init__(self, *args, **kwargs):
-                    _orig(self, *args, **kwargs)
-                    _coerce_dicts(self)
+            def __init__(self, *args, **kwargs):
+                _orig(self, *args, **kwargs)
+                if coerce_dicts:
+                    _coerce_fields(self)
             cls.__init__ = __init__
 
         for field_name, inner_dc in inner_dcs.items():
             setattr(cls, field_name, inner_dc)
 
-        # Keep PascalCase names as class attrs so eval(repr(...)) works
+        # keep PascalCase aliases so eval(repr(obj)) round-trips
         for pascal_name, field_name in pascal_to_field.items():
             if pascal_name != field_name:
                 setattr(cls, pascal_name, inner_dcs[field_name])
 
         return cls
 
-    if cls is None:
-        # Called as @deep_dataclass(autosnake=True) — return decorator
-        return _apply
-    else:
-        # Called as @deep_dataclass (no arguments)
-        return _apply(cls)
+    return _apply(cls) if cls is not None else _apply

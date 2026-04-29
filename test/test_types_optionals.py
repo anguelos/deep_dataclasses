@@ -1,7 +1,9 @@
+from __future__ import annotations
+import sys
 import pytest
 from dataclasses import field, asdict
 from deep_dataclasses import deep_dataclass, auxiliary
-from typing import Optional, List
+from typing import Optional
 
 
 def test_optional_none_default():
@@ -96,6 +98,29 @@ def test_optional_nested_deep_dataclass():
 
     assert Config().metrics is None
     c = Config(metrics={"accuracy": 0.95, "loss": 0.05})
+    assert isinstance(c.metrics, Config.Metrics)
+    assert c.metrics.accuracy == 0.95
+    assert Config(**asdict(Config())) == Config()
+    assert Config(**asdict(Config(metrics={"accuracy": 0.9}))) == Config(metrics=Config.Metrics(accuracy=0.9))
+
+
+@pytest.mark.skipif(sys.version_info < (3, 10), reason="PEP 604 | syntax requires Python 3.10+")
+def test_pep604optional_nested_deep_dataclass():
+    @deep_dataclass
+    class Config:
+        @auxiliary
+        class Metrics:
+            accuracy: float = 0.0
+            loss: float = 0.0
+
+        class solver:
+            lr: float = 1e-3
+
+        metrics: Metrics | None = None
+
+    assert Config().metrics is None
+    c = Config(metrics={"accuracy": 0.95, "loss": 0.05})
+    print(f"Metrics: {c.metrics}")
     assert isinstance(c.metrics, Config.Metrics)
     assert c.metrics.accuracy == 0.95
     assert Config(**asdict(Config())) == Config()

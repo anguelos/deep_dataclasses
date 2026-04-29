@@ -188,9 +188,38 @@ def test_unions():
     jsonschema.validate({"train": {"lr": 0.01}, "seed": 123, "id": "id4711"}, strict_schema)
 
 
-def test_type_zoo():
-    
+def test_pep604unions():
+    @deep_dataclass
+    class Config:
+        class train:
+            lr: float = 1e-3
+            pseudo_batch_size: Optional[int] = 32
+        seed: int = 42
+        id: int|str = "id123"
 
+    schema = to_json_schema(Config)
+    assert schema["type"] == "object"
+    assert "train" in schema["properties"]
+    assert "seed" in schema["properties"]
+    assert "id" in schema["properties"]
+
+    strict_schema = to_json_schema(Config, strict=True)
+    # correct — jsonschema validates it without raising an error
+    jsonschema.validate({"train": {"lr": 0.01, "pseudo_batch_size": 32}, "seed": 123, "id": "id4711"}, strict_schema)
+
+    # wrong type in Union — jsonschema raises ValidationError
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"train": {"lr": "0.001", "pseudo_batch_size": 32}, "seed": 123, "id": 123.456}, strict_schema)
+    
+    # missing field — jsonschema raises ValidationError
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"train": {"pseudo_batch_size": 32}, "seed": 123, "id": "id4711"}, strict_schema)
+
+    # missing optional field — jsonschema allows it and doesn't raise an error
+    jsonschema.validate({"train": {"lr": 0.01}, "seed": 123, "id": "id4711"}, strict_schema)
+
+
+def test_type_zoo():
     @dataclass
     class Config:
         flag: bool = True
