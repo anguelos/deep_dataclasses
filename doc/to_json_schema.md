@@ -105,11 +105,11 @@ jsonschema.validate({"epochs": 10, "experiment_id": "run-42"}, open_schema)
 
 ---
 
-## Validate-then-construct: a simple Pydantic
+## Validate-then-construct: a poor man's pydantic
 
 The combination of `to_json_schema` and `@deep_dataclass`'s dict coercion gives
 you a lightweight validate-then-construct pattern that covers most use cases where
-you might otherwise reach for Pydantic:
+you might otherwise reach for [Pydantic](https://docs.pydantic.dev/):
 
 ```python
 import json, jsonschema
@@ -137,14 +137,14 @@ run = TrainingRun(**raw)
 isinstance(run.Optimizer, TrainingRun.Optimizer)  # True — dicts coerced recursively
 ```
 
-Compared to Pydantic:
+Compared to [Pydantic](https://docs.pydantic.dev/):
 
-| | `to_json_schema` + `@deep_dataclass` | Pydantic |
+| | `to_json_schema` + `@deep_dataclass` | [Pydantic](https://docs.pydantic.dev/) |
 |---|---|---|
-| Validation | At construction (jsonschema) | At construction |
+| Validation | At construction ([jsonschema](https://python-jsonschema.readthedocs.io/)) | At construction |
 | Type coercion | Dataclass-typed fields only | All fields |
 | Schema export | `to_json_schema(cls)` | `Model.model_json_schema()` |
-| Dependencies | `jsonschema` (optional) | `pydantic` |
+| Dependencies | [`jsonschema`](https://python-jsonschema.readthedocs.io/) (optional) | `pydantic` |
 | stdlib compatibility | Full `@dataclass` | Separate `BaseModel` |
 | Nested dict coercion | ✅ | ✅ |
 | Field validators | ❌ (use `__post_init__`) | ✅ |

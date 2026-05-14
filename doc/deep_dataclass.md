@@ -17,7 +17,7 @@ class, you write the class inline and the decorator does the rest.
 `dataclasses.fields`, `dataclasses.asdict`, `dataclasses.astuple`, `repr`, `==`,
 `__hash__`, `frozen`, `slots`, `order`, `kw_only` — works exactly as it does on a
 class decorated with plain `@dataclass`.  Third-party libraries that consume
-dataclasses (dacite, dataclass-wizard, pydantic dataclasses, cattrs, …) are
+dataclasses ([dacite](https://github.com/konradhalas/dacite), [dataclass-wizard](https://dataclass-wizard.readthedocs.io/), [pydantic dataclasses](https://docs.pydantic.dev/latest/concepts/dataclasses/), [cattrs](https://catt.rs/), …) are
 likewise fully compatible.
 
 ---

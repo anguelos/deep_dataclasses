@@ -85,7 +85,7 @@ NestedParent(**asdict(d1)) == d1  # False — vanilla @dataclass doesn't coerce 
 
 ---
 
-## Validation and Config Loading
+## Validation and Config Loading: A poor mans [pydantic](https://pydantic.dev/)
 
 `to_json_schema` exports any `@deep_dataclass` schema for use with third-party validators. Because `@deep_dataclass` coerces nested dicts at construction time, the validate-then-construct pattern works at all depths:
 
