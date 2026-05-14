@@ -106,10 +106,11 @@ Traceback (most recent call last):
 jsonschema.exceptions.ValidationError: 'bad' is not of type 'number'
 """
 
+from dataclasses import asdict, dataclass, field, is_dataclass
 
-from .deep_dataclass import deep_dataclass, auxiliary
+from .deep_dataclass import auxiliary, deep_dataclass
 from .json_schema import to_json_schema
 
-__version__ = "0.3.4"
+__version__ = '0.3.5'
 
-__all__ = ["deep_dataclass", "auxiliary", "to_json_schema", "__version__"]
+__all__ = ['deep_dataclass', 'auxiliary', 'to_json_schema', '__version__', 'dataclass', 'field', 'asdict', 'is_dataclass']

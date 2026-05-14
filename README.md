@@ -1,8 +1,8 @@
 # deep_dataclasses
 
-
 [![Tests](https://img.shields.io/github/actions/workflow/status/anguelos/deep_dataclasses/tests.yml?label=tests)](https://github.com/anguelos/deep_dataclasses/actions/workflows/tests.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/anguelos/deep_dataclasses/badges/coverage.json)](https://github.com/anguelos/deep_dataclasses/actions/workflows/tests.yml)
+[![Docs](https://readthedocs.org/projects/deep-dataclasses/badge/?version=latest)](https://deep-dataclasses.readthedocs.io/en/latest/)
 [![PyPI](https://img.shields.io/pypi/v/deep_dataclasses)](https://pypi.org/project/deep_dataclasses/)
 [![Python](https://img.shields.io/pypi/pyversions/deep_dataclasses)](https://pypi.org/project/deep_dataclasses/)
 [![License](https://img.shields.io/github/license/anguelos/deep_dataclasses)](https://github.com/anguelos/deep_dataclasses/blob/main/LICENSE)

@@ -1,9 +1,12 @@
 from __future__ import annotations
+
 import sys
-import pytest
-from dataclasses import field, asdict
-from deep_dataclasses import deep_dataclass, auxiliary
+from dataclasses import asdict
 from typing import Optional
+
+import pytest
+
+from deep_dataclasses import auxiliary, deep_dataclass
 
 
 def test_optional_none_default():
@@ -11,7 +14,7 @@ def test_optional_none_default():
     class Config:
         @auxiliary
         class Plugin:
-            name: str = ""
+            name: str = ''
             enabled: bool = True
 
         plugin: Optional[Plugin] = None
@@ -25,18 +28,18 @@ def test_optional_dict_coercion():
     class Config:
         @auxiliary
         class Plugin:
-            name: str = ""
+            name: str = ''
             enabled: bool = True
 
         plugin: Optional[Plugin] = None
 
-    c = Config(plugin={"name": "foo"})
+    c = Config(plugin={'name': 'foo'})
     assert isinstance(c.plugin, Config.Plugin)
-    assert c.plugin.name == "foo"
+    assert c.plugin.name == 'foo'
     assert c.plugin.enabled == True
 
-    c = Config(plugin={"name": "bar", "enabled": False})
-    assert c.plugin.name == "bar"
+    c = Config(plugin={'name': 'bar', 'enabled': False})
+    assert c.plugin.name == 'bar'
     assert c.plugin.enabled == False
 
 
@@ -45,12 +48,12 @@ def test_optional_instance_passthrough():
     class Config:
         @auxiliary
         class Plugin:
-            name: str = ""
+            name: str = ''
             enabled: bool = True
 
         plugin: Optional[Plugin] = None
 
-    p = Config.Plugin(name="baz", enabled=False)
+    p = Config.Plugin(name='baz', enabled=False)
     assert Config(plugin=p).plugin is p
 
 
@@ -59,13 +62,13 @@ def test_optional_roundtrip():
     class Config:
         @auxiliary
         class Plugin:
-            name: str = ""
+            name: str = ''
             enabled: bool = True
 
         plugin: Optional[Plugin] = None
 
     assert Config(**asdict(Config())) == Config()
-    assert Config(**asdict(Config(plugin={"name": "x"}))) == Config(plugin=Config.Plugin(name="x"))
+    assert Config(**asdict(Config(plugin={'name': 'x'}))) == Config(plugin=Config.Plugin(name='x'))
 
 
 def test_optional_inner_class_as_field():
@@ -78,9 +81,9 @@ def test_optional_inner_class_as_field():
         extra: Optional[str] = None
 
     assert Config().extra is None
-    assert Config(extra="hello").extra == "hello"
+    assert Config(extra='hello').extra == 'hello'
     assert Config(**asdict(Config())) == Config()
-    assert Config(**asdict(Config(extra="hello"))) == Config(extra="hello")
+    assert Config(**asdict(Config(extra='hello'))) == Config(extra='hello')
 
 
 def test_optional_nested_deep_dataclass():
@@ -97,14 +100,14 @@ def test_optional_nested_deep_dataclass():
         metrics: Optional[Metrics] = None
 
     assert Config().metrics is None
-    c = Config(metrics={"accuracy": 0.95, "loss": 0.05})
+    c = Config(metrics={'accuracy': 0.95, 'loss': 0.05})
     assert isinstance(c.metrics, Config.Metrics)
     assert c.metrics.accuracy == 0.95
     assert Config(**asdict(Config())) == Config()
-    assert Config(**asdict(Config(metrics={"accuracy": 0.9}))) == Config(metrics=Config.Metrics(accuracy=0.9))
+    assert Config(**asdict(Config(metrics={'accuracy': 0.9}))) == Config(metrics=Config.Metrics(accuracy=0.9))
 
 
-@pytest.mark.skipif(sys.version_info < (3, 10), reason="PEP 604 | syntax requires Python 3.10+")
+@pytest.mark.skipif(sys.version_info < (3, 10), reason='PEP 604 | syntax requires Python 3.10+')
 def test_pep604optional_nested_deep_dataclass():
     @deep_dataclass
     class Config:
@@ -119,12 +122,12 @@ def test_pep604optional_nested_deep_dataclass():
         metrics: Metrics | None = None
 
     assert Config().metrics is None
-    c = Config(metrics={"accuracy": 0.95, "loss": 0.05})
-    print(f"Metrics: {c.metrics}")
+    c = Config(metrics={'accuracy': 0.95, 'loss': 0.05})
+    print(f'Metrics: {c.metrics}')
     assert isinstance(c.metrics, Config.Metrics)
     assert c.metrics.accuracy == 0.95
     assert Config(**asdict(Config())) == Config()
-    assert Config(**asdict(Config(metrics={"accuracy": 0.9}))) == Config(metrics=Config.Metrics(accuracy=0.9))
+    assert Config(**asdict(Config(metrics={'accuracy': 0.9}))) == Config(metrics=Config.Metrics(accuracy=0.9))
 
 
 def test_optional_primitive_fields():
@@ -135,5 +138,5 @@ def test_optional_primitive_fields():
         ratio: Optional[float] = None
 
     assert Config().name is None
-    assert Config(name="x", count=3, ratio=0.5) == Config(name="x", count=3, ratio=0.5)
-    assert Config(**asdict(Config(name="y"))) == Config(name="y")
+    assert Config(name='x', count=3, ratio=0.5) == Config(name='x', count=3, ratio=0.5)
+    assert Config(**asdict(Config(name='y'))) == Config(name='y')

@@ -1,5 +1,5 @@
-import pytest
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
+
 from deep_dataclasses import deep_dataclass
 
 
@@ -13,9 +13,9 @@ def test_redecoration_wraps_init():
     @dataclass
     class Config:
         inner: _Inner = field(default_factory=_Inner)
-        name: str = ""
+        name: str = ''
 
-    c = Config(inner={"x": 5}, name="test")
+    c = Config(inner={'x': 5}, name='test')
     assert c.inner.x == 5
     assert isinstance(c.inner, _Inner)
     assert Config(**asdict(c)) == c
