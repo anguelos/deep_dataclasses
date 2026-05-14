@@ -10,6 +10,7 @@ sys.path.insert(0, str(_PROJECT_ROOT / 'src'))
 # Symlink README.md into this directory so index.md can include it.
 _readme_link = Path(__file__).parent / 'README.md'
 if not _readme_link.exists():
+    _readme_link.unlink(missing_ok=True)  # remove stale symlink from prior build
     _readme_link.symlink_to(_PROJECT_ROOT / 'README.md')
 
 # -- Project information -----------------------------------------------------
@@ -26,10 +27,10 @@ exclude_patterns = ['_build', 'README.md']
 # -- Extensions --------------------------------------------------------------
 extensions = [
     'sphinx.ext.autodoc',
-    'sphinx.ext.napoleon',   # NumPy / Google docstring parser
-    'sphinx.ext.linkcode',   # [source] buttons linking to GitHub
-    'myst_parser',           # Markdown support
-    'sphinx_copybutton',     # copy button on code blocks
+    'sphinx.ext.napoleon',
+    'sphinx.ext.linkcode',
+    'myst_parser',
+    'sphinx_copybutton',
 ]
 
 # -- Napoleon: NumPy docstring style -----------------------------------------

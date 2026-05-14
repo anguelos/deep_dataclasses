@@ -1,5 +1,5 @@
-import re
 import dataclasses
+import re
 import typing
 
 # PEP 604: X | Y produces types.UnionType (Python 3.10+), not typing.Union
@@ -12,10 +12,39 @@ except ImportError:
 try:
     from inspect import get_annotations as _get_annotations
 except ImportError:
+
     def _get_annotations(cls):
         return vars(cls).get('__annotations__', {})
 
+
 TypeForm = typing.Any  # type | GenericAlias | UnionType | None (no stdlib type covers all)
+
+_MUTABLE_COLLECTIONS = (list, dict, set)
+_PRIMITIVE_TYPES = (int, str, float, bool, type(None))
+
+
+def _check_collection_elements(attr_name: str, val: object) -> None:
+    if isinstance(val, list):
+        bad = [item for item in val if not isinstance(item, _PRIMITIVE_TYPES)]
+    elif isinstance(val, dict):
+        bad = [k for k in val if not isinstance(k, _PRIMITIVE_TYPES)] + [v for v in val.values() if not isinstance(v, _PRIMITIVE_TYPES)]
+    elif isinstance(val, set):
+        bad = [item for item in val if not isinstance(item, _PRIMITIVE_TYPES)]
+    else:
+        return
+    if bad:
+        raise TypeError(f"field '{attr_name}': default {type(val).__name__} contains non-primitive values {bad!r}. Use field(default_factory=...) explicitly.")
+
+
+def _wrap_default_mutable_collection(cls, attr_name: str, val: object) -> None:
+    if isinstance(val, dataclasses.Field):
+        return
+    if isinstance(val, _MUTABLE_COLLECTIONS):
+        _check_collection_elements(attr_name, val)
+        if len(val) == 0:
+            setattr(cls, attr_name, dataclasses.field(default_factory=type(val)))
+        else:
+            setattr(cls, attr_name, dataclasses.field(default_factory=lambda v=val: type(v)(v)))
 
 
 def auxiliary(cls):
@@ -102,8 +131,7 @@ def _to_snake(name: str) -> str:
 
 def _is_union(typ: TypeForm) -> bool:
     # handles both typing.Union[X, Y] and X | Y (PEP 604)
-    return (typing.get_origin(typ) is typing.Union or
-            (_UnionType is not None and isinstance(typ, _UnionType)))
+    return typing.get_origin(typ) is typing.Union or (_UnionType is not None and isinstance(typ, _UnionType))
 
 
 def _best_union_match(candidates: list, val: dict):
@@ -133,9 +161,9 @@ def _coerce_value(typ: TypeForm, val: typing.Any) -> typing.Any:
     # Union / Optional[X] / X | Y | None  — all the same branch
     if _is_union(typ):
         non_none = [a for a in args if a is not type(None)]
-        if len(non_none) == 1:                          # Optional[X]
+        if len(non_none) == 1:  # Optional[X]
             return _coerce_value(non_none[0], val)
-        if isinstance(val, dict):                       # Union[A, B, ...]
+        if isinstance(val, dict):  # Union[A, B, ...]
             best = _best_union_match(non_none, val)
             if best is not None:
                 return _coerce_dict_to(best, val)
@@ -145,7 +173,7 @@ def _coerce_value(typ: TypeForm, val: typing.Any) -> typing.Any:
         return [_coerce_value(args[0], item) for item in val]
 
     if origin is tuple and args and isinstance(val, (list, tuple)):
-        if len(args) == 2 and args[1] is Ellipsis:     # Tuple[X, ...]
+        if len(args) == 2 and args[1] is Ellipsis:  # Tuple[X, ...]
             return tuple(_coerce_value(args[0], item) for item in val)
         return tuple(_coerce_value(et, item) for et, item in zip(args, val))
 
@@ -237,9 +265,20 @@ def deep_dataclass(cls=None, *, coerce_dicts: bool = True, autosnake: bool = Fal
     ------
     TypeError
         If ``init=False`` is passed together with ``coerce_dicts=True``.
+    TypeError
+        If a mutable default value is not a list, dict, or set.
+    TypeError
+        If a list, dict, or set default contains non-primitive values.
+    TypeError
+        If a subclass adds mandatory fields after a parent with defaulted fields.
 
     Notes
     -----
+    * Mutable defaults (``list``, ``dict``, ``set``) are automatically
+      wrapped with ``field(default_factory=...)``.  Empty containers use
+      the type itself as the factory; non-empty containers use a lambda.
+      Elements must be primitive types (``int``, ``str``, ``float``,
+      ``bool``, ``None``).
     * Inner classes decorated with :func:`auxiliary` are processed and
       kept as class attributes but are **not** promoted to standalone fields.
       Use this for shared type definitions — for example, an element type
@@ -270,7 +309,7 @@ def deep_dataclass(cls=None, *, coerce_dicts: bool = True, autosnake: bool = Fal
     >>> Config().epochs
     100
 
-    Passing dicts instead of instances (coerce_dicts):
+    Mutable defaults are wrapped automatically:
 
     >>> cfg = Config(Optimizer={"lr": 0.01})
     >>> cfg.Optimizer.lr
@@ -301,40 +340,43 @@ def deep_dataclass(cls=None, *, coerce_dicts: bool = True, autosnake: bool = Fal
     >>> from typing import List
     >>> from dataclasses import field
     >>> @deep_dataclass
-    ... class Pipeline:
-    ...     @auxiliary
-    ...     class Stage:
-    ...         name: str = ""
-    ...         enabled: bool = True
-    ...     stages: List[Stage] = field(default_factory=list)
-    >>> p = Pipeline(stages=[{"name": "preprocess"}, {"name": "train"}])
-    >>> p.stages[0].name
-    'preprocess'
-    >>> "Stage" in {f.name for f in dataclasses.fields(Pipeline)}
+    ... class Experiment:
+    ...     tags: list = []
+    ...     scores: list = [1, 2, 3]
+    ...     meta: dict = {}
+    >>> Experiment().tags is Experiment().tags
     False
     """
+
     def _apply(cls):
         if dataclass_kwargs.get('init') is False and coerce_dicts:
-            raise TypeError("coerce_dicts requires init=True")
+            raise TypeError('coerce_dicts requires init=True')
 
         user_post_init = vars(cls).get('__post_init__') if coerce_dicts else None
         old_annotations = dict(_get_annotations(cls))
-        inner_dcs = {}       # field_name -> dataclass
-        pascal_to_field = {} # PascalCase attr -> field_name (only differs when autosnake=True)
+
+        # wrap mutable collection defaults before @dataclass sees them
+        for attr_name in old_annotations:
+            val = vars(cls).get(attr_name, dataclasses.MISSING)
+            if val is not dataclasses.MISSING:
+                _wrap_default_mutable_collection(cls, attr_name, val)
+
+        inner_dcs = {}  # field_name -> dataclass
+        pascal_to_field = {}  # PascalCase attr -> field_name (only differs when autosnake=True)
 
         for attr_name in list(vars(cls)):
             if attr_name.startswith('_'):
                 continue
             attr_val = vars(cls)[attr_name]
-            is_inner_class = (isinstance(attr_val, type)
-                              and attr_val.__qualname__ == f'{cls.__qualname__}.{attr_name}'
-                              and attr_name not in old_annotations)
+            is_inner_class = isinstance(attr_val, type) and attr_val.__qualname__ == f'{cls.__qualname__}.{attr_name}' and attr_name not in old_annotations
             if not is_inner_class:
                 continue
 
             inner_dc = deep_dataclass(attr_val, autosnake=autosnake)
 
-            if getattr(inner_dc, '__deep_dataclass_auxiliary__', False):
+            if vars(inner_dc).get('__deep_dataclass_auxiliary__', False):
+                # getattr made children of auxiliary to be auxiliaries as well,
+                # but we only want to skip the one directly decorated with @auxiliary
                 setattr(cls, attr_name, inner_dc)  # type-only helper, no field
             else:
                 field_name = _to_snake(attr_name) if autosnake else attr_name
@@ -348,35 +390,59 @@ def deep_dataclass(cls=None, *, coerce_dicts: bool = True, autosnake: bool = Fal
         for key in vars(cls):
             if key.startswith('_'):
                 if key in old_annotations:
-                    ordered[key] = old_annotations[key]; seen.add(key)
+                    ordered[key] = old_annotations[key]
+                    seen.add(key)
                 continue
             if key in pascal_to_field:
                 fn = pascal_to_field[key]
-                ordered[fn] = inner_dcs[fn]; seen.add(fn)
+                ordered[fn] = inner_dcs[fn]
+                seen.add(fn)
             elif key in inner_dcs:
-                ordered[key] = inner_dcs[key]; seen.add(key)
+                ordered[key] = inner_dcs[key]
+                seen.add(key)
             elif key in old_annotations:
-                ordered[key] = old_annotations[key]; seen.add(key)
+                ordered[key] = old_annotations[key]
+                seen.add(key)
         mandatory = {k: v for k, v in old_annotations.items() if k not in seen}
         cls.__annotations__ = {**mandatory, **ordered}
 
-        if not dataclasses.is_dataclass(cls):
+        if mandatory:
+            #  We can not inherit if there are mandatory fields, because we can't guarantee that the base
+            # class defaults won't violate the dataclass field ordering rule.  Check explicitly and error at decoration
+            # This is the generic dataclass behavior
+            for base in cls.__mro__[1:]:
+                if not dataclasses.is_dataclass(base):
+                    continue
+                for f in dataclasses.fields(base):
+                    if f.default is not dataclasses.MISSING or f.default_factory is not dataclasses.MISSING:
+                        raise TypeError(
+                            f"non-default field(s) {list(mandatory)} in '{cls.__name__}' follow "
+                            f"default fields inherited from '{base.__name__}'. "
+                            f'Use kw_only=True (Python 3.10+) or provide defaults.'
+                        )
+                        break
+
+        if '__dataclass_fields__' not in vars(cls):  # if not dataclasses.is_dataclass(cls):
             if coerce_dicts:
                 if user_post_init:
+
                     def __post_init__(self):
                         _coerce_fields(self)
                         user_post_init(self)
+
                     cls.__post_init__ = __post_init__
                 else:
                     cls.__post_init__ = _coerce_fields
             cls = dataclasses.dataclass(cls, **dataclass_kwargs)
         else:
-            # already a @dataclass — wrap __init__
+            # already a @dataclass or a @dataclass child — wrap __init__
             _orig = cls.__init__
+
             def __init__(self, *args, **kwargs):
                 _orig(self, *args, **kwargs)
                 if coerce_dicts:
                     _coerce_fields(self)
+
             cls.__init__ = __init__
 
         for field_name, inner_dc in inner_dcs.items():
